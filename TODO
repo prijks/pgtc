@@ -1,0 +1,17 @@
+Things needing implementing in next version:
+
+ * add autoconf/configure.in stuff
+
+ * improve make install rule
+
+ * add Ability to remove jobs
+
+ * Option to have state of jobs saved across quits, or to have quitting
+   automatically punch out all active jobs
+
+   - need to look into what kind of signal is sent to applet on quit...
+
+ * option to have timecard calculated only on hours entered within a
+   certain period
+
+ * check for memory leaks

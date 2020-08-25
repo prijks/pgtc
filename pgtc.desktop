@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Pete's Gnome Time Card
+Comment=A simple time tracker
+Exec=pgtc --activate-goad-server=pgtc
+Icon=
+Terminal=0
+Type=Application

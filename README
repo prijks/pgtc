@@ -1,0 +1,24 @@
+pgtc, by Pete Rijks <prijks@esgeroth.org>
+
+pgtc is "Pete's Gnome Time Card," a simple time-tracking utility I
+wrote because no other tools out there did exactly what I wanted. I
+wanted a tool that I could use to keep track of the hours that I work
+on certain projects, so that when it comes time to fill out a time
+card, I don't have to sit down and remember exactly when I worked, but
+can instead just have pgtc draw up a list of times worked that I can
+copy right onto the timecard. I figured others may find this tool
+useful as well, so I have released it as free software under the terms
+of the GPL. Enjoy.
+
+This software is still under development, and much improvement is
+still needed in the installation area. Currently there is a makefile
+with an install rule, but it is in definite need of improving. To
+compile pgtc, you will need to have gnome installed. Simply type
+"make" to compile pgtc. To install pgtc, make sure you have write
+access to the places pgtc wants to be, then type "make install".
+
+pgtc has been tested under Linux (Debian potato) and Solaris (2.6) 
+using gnome 1.0.54 in both cases.
+
+Any questions, comments, suggestions, etc are appreciated. Please send
+them to prijks@esgeroth.org or prijks@nd.edu.
