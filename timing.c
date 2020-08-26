@@ -2,6 +2,8 @@
  *  pgtc - Pete's Gnome Time Card is a gnome panel applet for keeping
  *  track of hours
  *
+ *  $Id: timing.c,v 1.3 2000/02/27 22:21:31 prijks Exp $
+ *
  *  Copyright (C) 2000 Pete Rijks
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -17,6 +19,17 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software Foundation,
  *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  
+ *
+ *
+ *  $Log: timing.c,v $
+ *  Revision 1.3  2000/02/27 22:21:31  prijks
+ *  added a delete event handler so that upon quitting, jobs can be saved
+ *  or punched out based on the user's preferences. made clearing the
+ *  timecard prompt before doing so.
+ *
+ *  Revision 1.2  2000/02/27 04:00:17  prijks
+ *  added del_job function to allow users to delete unwanted jobs.
+ *
 \*/
 
 #include <gnome.h>
@@ -71,7 +84,7 @@ punch_callback()
       what = PUNCHIN;
     }
     new = g_new(hours,1);
-    new->name = g_strdup(jb->name); /* PWR: check memory leaks */
+    new->name = g_strdup(jb->name); /* PWR: fix memory leaks */
     new->what = what;
     new->timestamp = time(NULL);
     hourslist = g_list_append(hourslist, new);
@@ -148,6 +161,56 @@ new_job()
     gnome_dialog_close(GNOME_DIALOG(nj_dialog));
 }
 
+void
+del_job()
+{
+  GtkWidget *dj_dialog;
+  GtkWidget *dj_label;
+  gchar dj_label_text[81];
+  gint dj_button_pressed;
+  gchar *dj_jobname;
+  jobdesc tmp;
+  GList *found;
+
+  dj_dialog = gnome_dialog_new("Delete Job", GNOME_STOCK_BUTTON_OK,
+			       GNOME_STOCK_BUTTON_CANCEL, NULL);
+
+  dj_jobname = get_active_job();
+  g_snprintf(dj_label_text, 80, "Are you sure you want to\n"
+	     "delete the job \"%s\"?",dj_jobname);
+  dj_label = gtk_label_new(dj_label_text);
+  gtk_box_pack_start(GTK_BOX(GNOME_DIALOG(dj_dialog)->vbox),
+		     dj_label, TRUE, TRUE, 0);
+  gtk_widget_show(dj_label);
+
+  dj_button_pressed = gnome_dialog_run(GNOME_DIALOG(dj_dialog));
+
+  if (dj_button_pressed == 0) {
+    /* remove any hours logged for the job to be deleted */
+    clear_card();
+
+    /* find the job in the job list and remove it*/
+    tmp.name = dj_jobname;
+    found = g_list_find_custom(joblist, (gpointer)&tmp, job_compare_func);
+    if (found) {
+      joblist = g_list_remove_link(joblist, found);
+      g_list_free_1(found);
+    }
+
+    /* remove the entry for the job from the job pull-down menu */
+    remove_job(dj_jobname);
+
+    g_free(dj_jobname);
+
+    /* save */
+    save_signal();
+  }
+
+  if (dj_button_pressed >= 0) 
+    gnome_dialog_close(GNOME_DIALOG(dj_dialog));
+}
+
+
 /* calculate the hours worked on the active job */
 void
 calc_card()
@@ -167,6 +230,7 @@ calc_card()
   gint lastin = 0;
   gint stat = PUNCHOUT;
   gchar *dates[2];
+  time_t now;
 
   cc_dialog = gnome_dialog_new("Time Card", GNOME_STOCK_BUTTON_OK,
 			       _("Clear Hours"), NULL);
@@ -184,12 +248,27 @@ calc_card()
 
   for (i = 0; i < num_hours(); i++) {
     t = g_list_nth_data(hourslist, i);
-    if (t == NULL)
+    if (t == NULL) {
       break;
+    }
     if (g_strcasecmp(cc_jobname, t->name))
       continue;
     if (stat == t->what)
       continue; /* PWR: come up with a better thing to do here... */
+    if (i == num_hours() - 1) {
+      if (t->what == PUNCHIN) {
+	lastin = t->timestamp;
+	dates[0] = g_strdup(ctime(&(t->timestamp)));
+	/* if we're currently punched in, we'll calculate the hours
+	 * worked up to the minute ... */
+	now = time(NULL);
+	total += (now - lastin);
+	dates[1] = g_strdup(ctime(&now));
+	gtk_clist_append(GTK_CLIST(cc_clist), dates);
+      }
+    }
+    if (g_strcasecmp(cc_jobname, t->name))
+      continue;
     if (stat == PUNCHOUT) {
       stat = PUNCHIN;
       lastin = t->timestamp;
@@ -226,31 +305,170 @@ calc_card()
 void
 clear_card()
 {
+  GtkWidget *cc_dialog;
+  GtkWidget *cc_label;
+  gchar cc_label_text[81];
+  gint cc_button_pressed;
+  gchar *cc_jobname;
   gchar *j;
   hours tmp;
   GList *found;
+  jobdesc tmp2;
+  gint p;
+  jobdesc *jb;
 
   j = get_active_job();
   tmp.name = j;
 
-  while ((found = g_list_find_custom(hourslist,
-				     (gpointer)&tmp, hour_compare_func))) {
-    hourslist = g_list_remove_link(hourslist, found);
-    g_list_free_1(found);
+  cc_dialog = gnome_dialog_new("Clear Hours", GNOME_STOCK_BUTTON_OK,
+			       GNOME_STOCK_BUTTON_CANCEL, NULL);
+
+  cc_jobname = get_active_job();
+  g_snprintf(cc_label_text, 80, "Are you sure you want to\n"
+	     "clear the hours for the job \"%s\"?",cc_jobname);
+  cc_label = gtk_label_new(cc_label_text);
+  gtk_box_pack_start(GTK_BOX(GNOME_DIALOG(cc_dialog)->vbox),
+		     cc_label, TRUE, TRUE, 0);
+  gtk_widget_show(cc_label);
+
+  cc_button_pressed = gnome_dialog_run(GNOME_DIALOG(cc_dialog));
+
+  if (cc_button_pressed == 0) {
+
+    while ((found = g_list_find_custom(hourslist,
+				       (gpointer)&tmp, hour_compare_func))) {
+      hourslist = g_list_remove_link(hourslist, found);
+      g_list_free_1(found);
+    }
+
+    tmp2.name = j;
+    found = g_list_find_custom(joblist, (gpointer)&tmp2,job_compare_func);
+    if (found) {
+      p = g_list_position(joblist, found);
+      jb = (jobdesc*) g_list_nth_data(joblist,p);
+      if (jb->active) {
+	jb->active = 0;
+	red_light();
+      }
+    }
+    save_signal();
   }
-  save_signal();
+  if (cc_button_pressed >= 0) 
+    gnome_dialog_close(GNOME_DIALOG(cc_dialog));
+
 }
 
 void
 create_jobs()
 {
   gint i;
-  jobdesc *j;
+  jobdesc *jb;
+  gchar *j;
+  jobdesc tmp;
+  GList *found;
+  gint p;
+
   for (i = 0; i < num_jobs(); i++) {
-    j = (jobdesc*)g_list_nth_data(joblist,i);
-    add_job(j->name);
+    jb = (jobdesc*)g_list_nth_data(joblist,i);
+    add_job(jb->name);
+  }
+  j = get_active_job();
+  tmp.name = j;
+  found = g_list_find_custom(joblist, (gpointer)&tmp,job_compare_func);
+  if (found) {
+    p = g_list_position(joblist, found);
+    jb = (jobdesc*) g_list_nth_data(joblist,p);
+    if (jb->active) {
+      green_light();
+    }
   }
 }
+
+static void
+prompt_quit()
+{
+  jobdesc* jb;
+  hours *new;
+  gint numjobs;
+  gint i;
+  GtkWidget *pq_dialog;
+  GtkWidget *pq_label;
+  gchar pq_label_text[81];
+  gint pq_button_pressed;
+
+  numjobs = num_jobs();
+  for (i = 0; i < numjobs; i++) {
+    jb = (jobdesc*)g_list_nth_data(joblist,i);
+    if (jb->active) {
+
+      pq_dialog = gnome_dialog_new("Question", "Punch Out",
+				   "Leave", NULL);
+
+      g_snprintf(pq_label_text,80,"You are still logged in to job \"%s\",\n"
+		 "Please choose an action for this job.\n",jb->name);
+      pq_label = gtk_label_new(pq_label_text);
+      gtk_box_pack_start(GTK_BOX(GNOME_DIALOG(pq_dialog)->vbox),
+			 pq_label, TRUE, TRUE, 0);
+      gtk_widget_show(pq_label);
+
+      pq_button_pressed = gnome_dialog_run(GNOME_DIALOG(pq_dialog));
+
+      if (pq_button_pressed == 0) {
+	red_light();
+	jb->active = 0;
+	new = g_new(hours,1);
+	new->name = g_strdup(jb->name); /* PWR: fix memory leaks */
+	new->what = PUNCHOUT;
+	new->timestamp = time(NULL);
+	hourslist = g_list_append(hourslist, new);
+	save_session(NULL,NULL,NULL);
+      }
+
+      if (pq_button_pressed >= 0) 
+	gnome_dialog_close(GNOME_DIALOG(pq_dialog));
+    }
+  }
+}
+
+gboolean
+delevent_handler(GtkWidget *widget, GdkEvent *event, gpointer user_data)
+{
+  jobdesc* jb;
+  hours *new;
+  gint what;
+  gint numjobs;
+  gint i;
+
+  /* first we check what they want us to do upon quitting */
+  switch (logout_pref()) {
+  case PUNCHOUT_ALL:
+    numjobs = num_jobs();
+    for (i = 0; i < numjobs; i++) {
+      jb = (jobdesc*)g_list_nth_data(joblist,i);
+      if (jb->active) {
+	red_light();
+	jb->active = 0;
+	what = PUNCHOUT;
+	new = g_new(hours,1);
+	new->name = g_strdup(jb->name); /* PWR: fix memory leaks */
+	new->what = what;
+	new->timestamp = time(NULL);
+	hourslist = g_list_append(hourslist, new);
+	/* apparently save_signal no longer works once we've
+	 * been asked to remove ourselves from the panel ... 
+	 * oh well, we'll just circumvent their abstractions */
+	save_session(NULL,NULL,NULL);
+      }
+    }
+    break;
+  case PROMPT:
+    prompt_quit();
+    break;
+  }
+
+  return FALSE;
+}
+
 
 /* mmm... abstracteriffic */
 gint

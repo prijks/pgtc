@@ -2,6 +2,8 @@
  *  pgtc - Pete's Gnome Time Card is a gnome panel applet for keeping
  *  track of hours
  *
+ *  $Id: session.c,v 1.2 2000/02/27 21:31:26 prijks Exp $
+ *
  *  Copyright (C) 2000 Pete Rijks
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -17,11 +19,42 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software Foundation,
  *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  
+ *
+ *  $Log: session.c,v $
+ *  Revision 1.2  2000/02/27 21:31:26  prijks
+ *  added support for preferences through creation of a preferences
+ *  structure, and by making load_session and save_session load/store the
+ *  preferences. Also created some functions so other parts of the code
+ *  can change or read the preferences.
+ *
+ *
 \*/
 
 #include <gnome.h>
 #include <applet-widget.h>
 #include "pgtc.h"
+
+static struct {
+  gint logoutaction;
+} preferences;
+
+static gint tmplp;
+
+void new_logout_pref(gint newlp)
+{
+  tmplp = newlp;
+}
+
+void set_logout_pref()
+{
+  preferences.logoutaction = tmplp;
+}
+
+gint logout_pref(void)
+{
+  return preferences.logoutaction;
+}
+
 
 gint
 save_session(GtkWidget *w, const char *privcfgpath, const char *globcfgpath)
@@ -31,7 +64,6 @@ save_session(GtkWidget *w, const char *privcfgpath, const char *globcfgpath)
   GList *l;
   gchar key[32];
   hours *h;
-
   gnome_config_push_prefix("/pgtc/");
 
   /* PWR: ok, this is really kinda bogus. if you can help me figure
@@ -55,6 +87,7 @@ save_session(GtkWidget *w, const char *privcfgpath, const char *globcfgpath)
    * I have all sorts of intentions of adding new features that 
    * would require mucking with how stuff is saved...  */
   gnome_config_set_int("main/internal_revision", INTERNAL_REVISION);
+  gnome_config_set_int("main/logout_action", preferences.logoutaction);
 
   /* save the jobs */
   gnome_config_clean_section("jobs");
@@ -65,6 +98,8 @@ save_session(GtkWidget *w, const char *privcfgpath, const char *globcfgpath)
   for (i = 0; i < numjobs; i++) {
     g_snprintf(key, 31, "jobs/job_%d",i);
     gnome_config_set_string(key, ((jobdesc*)g_list_nth_data(l,i))->name);
+    g_snprintf(key, 31, "jobs/status_%d",i);
+    gnome_config_set_int(key, ((jobdesc*)g_list_nth_data(l,i))->active);
   }
 
   /* save the hours */
@@ -90,6 +125,45 @@ save_session(GtkWidget *w, const char *privcfgpath, const char *globcfgpath)
   gnome_config_sync();
   gnome_config_drop_all();
   gnome_config_pop_prefix();
+  return FALSE;
+}
+
+static gint
+sanity_check(gint saved_rev)
+{
+  GtkWidget *sc_dialog;
+  GtkWidget *sc_label;
+  gint sc_button_pressed;
+
+  if (saved_rev != INTERNAL_REVISION) {
+    /* we've encountered a different internal revision!
+     * in some cases they're kinda compatible, tho. */
+    if (saved_rev == 1 && INTERNAL_REVISION == 2) {
+
+      sc_dialog = gnome_dialog_new("Warning", _("Continue"),
+				   _("Quit"), NULL);
+      sc_label = gtk_label_new("sanity check warning: \n"
+	     "My internal revision number is 2, the revision number\n"
+	     "of the saved files is 1. I can read the saved file,\n"
+	     "however, you will no longer be able to open the saved file\n"
+	     "with an earlier version of pgtc.\n\n");
+
+      gtk_box_pack_start(GTK_BOX(GNOME_DIALOG(sc_dialog)->vbox), 
+			 sc_label, TRUE, TRUE, 0);
+      gtk_widget_show(sc_label);
+      sc_button_pressed = gnome_dialog_run(GNOME_DIALOG(sc_dialog));
+
+      if (sc_button_pressed >= 0) 
+	gnome_dialog_close(GNOME_DIALOG(sc_dialog));
+      if (sc_button_pressed == 1)
+	return TRUE;      
+    } else {
+      printf("sanity check failed, revision mismatch:\n");
+      printf("my revision: %d. saved revision: %d\n",
+	     INTERNAL_REVISION,saved_rev);
+      return TRUE;
+    }
+  }
   return FALSE;
 }
 
@@ -119,12 +193,10 @@ load_session(GtkWidget *applet)
   /* sanity check */
   g_snprintf(key,31,"main/internal_revision=%d",INTERNAL_REVISION);
   intrev_check = gnome_config_get_int(key);
-  if (intrev_check != INTERNAL_REVISION) {
-    printf("sanity check failed, revision mismatch:\n");
-    printf("my revision: %d. saved revision: %d\n",
-	   INTERNAL_REVISION,intrev_check);
+  if (sanity_check(intrev_check))
     return TRUE;
-  }
+
+  preferences.logoutaction = gnome_config_get_int("main/logout_action=17");
 
   /* load the jobs */
   numjobs = gnome_config_get_int("jobs/numjobs");
@@ -133,7 +205,8 @@ load_session(GtkWidget *applet)
     jobname = gnome_config_get_string(key);
     tmp = g_new(jobdesc, 1);
     tmp->name = jobname;
-    tmp->active = 0;
+    g_snprintf(key, 31, "jobs/status_%d=0",i);
+    tmp->active = gnome_config_get_int(key);
     l = g_list_append(l, tmp);
   }
   set_joblist(l);

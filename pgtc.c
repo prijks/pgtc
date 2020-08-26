@@ -2,6 +2,8 @@
  *  pgtc - Pete's Gnome Time Card is a gnome panel applet for keeping
  *  track of hours
  *
+ *  $Id: pgtc.c,v 1.2 2000/02/27 21:28:27 prijks Exp $
+ *
  *  Copyright (C) 2000 Pete Rijks
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -17,12 +19,19 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software Foundation,
  *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  
+ *
+ *  $Log: pgtc.c,v $
+ *  Revision 1.2  2000/02/27 21:28:27  prijks
+ *  made load_session call before connecting save_session signal, so that
+ *  we don't accidentally overwrite anything during load_session if we
+ *  receive a save_session signal.
+ *
+ *
 \*/
 
 #include <gnome.h>
 #include <applet-widget.h>
 #include "pgtc.h"
-
 
 int
 main(int argc, char **argv)
@@ -45,11 +54,13 @@ main(int argc, char **argv)
   setup_ui(applet);
 
   /* session stuff */
-  gtk_signal_connect(GTK_OBJECT(applet), "save_session",
-		     GTK_SIGNAL_FUNC(save_session), NULL);
   if (load_session(applet)) {
     exit(1);
   }
+  gtk_signal_connect(GTK_OBJECT(applet), "save_session",
+		     GTK_SIGNAL_FUNC(save_session), NULL);
+  gtk_signal_connect(GTK_OBJECT(applet), "delete_event",
+		     GTK_SIGNAL_FUNC(delevent_handler), NULL);
 
   gtk_widget_show(applet);
 
